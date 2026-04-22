@@ -1,0 +1,24 @@
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        args: ["--line-length=88"]
+        files: "\\.py$"
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        files: "\\.py$"
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        files: "\\.py$"
+
+default_language_version:
+  python: "3.12"
+
+default_stages: [pre-commit]
+exclude: ^\.venv/
