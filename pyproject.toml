@@ -4,7 +4,7 @@
 name = "the-coversion-engine"
 version = "0.1.0"
 description = "An Automated Lead Generation and Conversion System for Tenacious Consulting and Outsourcing." 
-requires-python = ">=3.12"
+requires-python = "^3.12"
 dependencies = [
     "africastalking>=2.0.2",
     "aiohttp>=3.13.5",
