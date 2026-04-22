@@ -10,6 +10,7 @@ dependencies = [
     "aiohttp>=3.13.5",
     "black>=26.3.1",
     "cryptography>=46.0.7",
+    "fastapi>=0.136.0",
     "flake8>=7.3.0",
     "httpx>=0.28.1",
     "hubspot-api-client>=12.0.0",
@@ -54,6 +55,20 @@ extends = "default"
 level = "warning"
 allowed-values = ["true", "false"]
 
+[tool.poetry]
+name = "conversion-engine-backend"
+version = "0.1.0"
+description = "Webhook backend for Conversion Engine"
+authors = ["Nuhamin"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.136.0"
+uvicorn = "^0.45.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
 [project.optional-dependencies]
 dev = [
