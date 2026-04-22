@@ -1,0 +1,9 @@
+# .gitignore
+
+.venv/
+__pycache__/
+.env
+.vscode/
+
+# HubSpot config file
+hubspot.config.yml
