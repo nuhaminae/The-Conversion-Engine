@@ -1,0 +1,53 @@
+---
+name: CI
+
+on:
+  push: {}
+  pull_request: {}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache virtualenv
+        id: venv-cache
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('uv.lock') }}
+          restore-keys: ${{ runner.os }}-venv-
+
+      - name: Create and install dependencies if cache miss
+        if: steps.venv-cache.outputs.cache-hit != 'true'
+        run: uv sync
+
+      - name: Confirm Python version
+        run: .venv\Scripts\python.exe --version
+
+      - name: Style and Lint Validation (Black, isort, Flake8)
+        run: |
+          .\.venv\Scripts\black . --exclude=.venv --check --diff
+          .\.venv\Scripts\isort . --skip .venv --check --diff
+          .\.venv\Scripts\python.exe -m flake8 . `
+            --exclude=.venv `
+            --exit-zero
+
+      - name: Run pytest
+        run: |
+          .\.venv\Scripts\python.exe -m pytest tests `
+            --tb=short --maxfail=1 --disable-warnings -q
