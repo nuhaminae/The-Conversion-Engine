@@ -5,17 +5,30 @@ import logging
 import os
 
 import resend
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from hubspot import HubSpot
 from hubspot.crm.contacts import SimplePublicObjectInput
 
-# --- Initialize API Clients ---
+# --- Observability: Langfuse ---
+from langfuse import Langfuse
+
+# --- Load environment variables ---
+load_dotenv()
+
+# --- Initialise API Clients ---
 resend.api_key = os.environ.get("RESEND_API_KEY")
 hubspot_client = HubSpot(access_token=os.environ.get("HUBSPOT_ACCESS_TOKEN"))
 
+# --- Initialise Langfuse ---
+langfuse = Langfuse(
+    public_key=os.environ.get("LANGFUSE_PUBLIC_KEY"),
+    secret_key=os.environ.get("LANGFUSE_SECRET_KEY"),
+    host="https://cloud.langfuse.com",  # default cloud host
+)
+
 # --- Get Email Addresses from Environment ---
-# Correctly reads the email addresses you set in Render's environment
 TO_EMAIL = os.environ.get("RESEND_EMAIL")
 FROM_EMAIL = os.environ.get(
     "RESEND_FROM_EMAIL", "Acme <onboarding@resend.dev>"
@@ -58,13 +71,18 @@ def send_email_notification(sms_from: str, sms_text: str):
 
     try:
         params = {
-            "from": FROM_EMAIL,  # <-- Uses the environment variable
-            "to": [TO_EMAIL],  # <-- Uses the email from the environment variable
+            "from": FROM_EMAIL,
+            "to": [TO_EMAIL],
             "subject": subject,
             "html": html_body,
         }
         email = resend.Emails.send(params)
         logger.info(f"Email notification sent successfully via Resend to {TO_EMAIL}")
+
+        # --- Langfuse trace for email notification ---
+        trace = langfuse.trace(name="email_notification", input=params)
+        trace.log(f"Sent email notification to {TO_EMAIL}", level="info")
+        trace.end()
 
     except Exception as e:
         logger.error(f"Failed to send email notification: {e}")
@@ -104,10 +122,16 @@ def create_hubspot_contact():
         }
         simple_public_object_input = SimplePublicObjectInput(properties=properties)
         api_response = hubspot_client.crm.contacts.basic_api.create(
-            simple_public_object_input_for_create=simple_public_object_input  # Argument name is corrected here
+            simple_public_object_input_for_create=simple_public_object_input
         )
 
         logger.info(f"Successfully created HubSpot contact with ID: {api_response.id}")
+
+        # --- Langfuse trace for HubSpot contact creation ---
+        trace = langfuse.trace(name="hubspot_contact_creation", input=properties)
+        trace.log(f"Created HubSpot contact ID: {api_response.id}", level="info")
+        trace.end()
+
         return JSONResponse(
             content={"status": "success", "contact_id": api_response.id}
         )
@@ -123,7 +147,7 @@ def create_hubspot_contact():
 async def webhook_handler(request: Request):
     """
     Handles incoming webhooks from Africa's Talking, creates a HubSpot contact,
-    and sends an email notification.
+    sends an email notification, and logs everything to Langfuse.
     """
     content_type = request.headers.get("content-type", "").lower()
 
@@ -140,8 +164,12 @@ async def webhook_handler(request: Request):
                 logger.info(
                     f"Processing SMS from {sms_from} with message: '{sms_text}'"
                 )
-                # Trigger email notification
                 send_email_notification(sms_from=sms_from, sms_text=sms_text)
+
+                # --- Langfuse trace for SMS webhook ---
+                trace = langfuse.trace(name="sms_webhook", input=data)
+                trace.log(f"Received SMS from {sms_from}", level="info")
+                trace.end()
 
             return JSONResponse({"received": True, "data": data})
 
@@ -152,10 +180,45 @@ async def webhook_handler(request: Request):
                 content={"received": False, "error": "Could not parse form data."},
             )
 
+    elif "application/json" in content_type:
+        try:
+            body = await request.body()
+            if not body:
+                logger.info("Empty JSON request (health check).")
+                return JSONResponse(
+                    {"received": True, "message": "Empty JSON body acknowledged."}
+                )
+
+            data = json.loads(body)
+            logger.info(f"Received JSON data: {data}")
+
+            # --- Langfuse trace for JSON webhook ---
+            trace = langfuse.trace(name="json_webhook", input=data)
+            trace.log("Received JSON webhook event", level="info")
+            trace.end()
+
+            return JSONResponse({"received": True, "data": data})
+
+        except json.JSONDecodeError:
+            body = await request.body()
+            logger.error(f"Invalid JSON. Body: {body.decode('utf-8', 'ignore')}")
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"received": False, "error": "Invalid JSON in request body."},
+            )
+
     else:
         logger.info(
             f"Received a request with unhandled or missing Content-Type: {content_type}"
         )
+
+        # --- Langfuse trace for fallback webhook ---
+        trace = langfuse.trace(
+            name="fallback_webhook", input={"content_type": content_type}
+        )
+        trace.log("Unhandled webhook content type", level="warning")
+        trace.end()
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
