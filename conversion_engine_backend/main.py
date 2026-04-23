@@ -1,10 +1,10 @@
 # conversion_engine_backend/main.py
 
-# main.py
 import json
 import logging
 from logging.handlers import RotatingFileHandler
-
+import os
+import resend
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
@@ -13,17 +13,42 @@ app = FastAPI()
 # --- Configure logging ---
 logger = logging.getLogger("webhook_logger")
 logger.setLevel(logging.INFO)
-# Using a simple StreamHandler to log to the console, which Render captures.
-handler = logging.StreamHandler()
-formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
+# Log to console (captured by Render)
+console_handler = logging.StreamHandler()
+console_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# Log to file (rotating)
+file_handler = RotatingFileHandler("webhook.log", maxBytes=5*1024*1024, backupCount=3)
+file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# --- Configure Resend ---
+# IMPORTANT: replace with environment variable in production
+resend.api_key = os.environ.get("RESEND_API_KEY") 
+resend_email = os.environ.get("RESEND_EMAIL")
 
 @app.get("/")
 def read_root():
     """Handles GET requests to the root URL for health checks."""
     return {"status": "ok", "message": "FastAPI is running on Render"}
+
+
+@app.get("/send-test-email")
+def send_test_email():
+    """Send a test email via Resend to verify outbound email works."""
+    params = {
+        "from": "onboarding@resend.dev",   # Resend sandbox sender
+        "to": resend_email,    # Replace with your email
+        "subject": "Test Email from FastAPI",
+        "html": "<p>Hello from Resend + FastAPI!</p>",
+    }
+    email = resend.Emails.send(params)
+    logger.info(f"Sent test email: {email}")
+    return {"status": "sent", "id": email["id"]}
 
 
 @app.post("/webhook")
@@ -34,20 +59,17 @@ async def webhook_handler(request: Request):
     """
     content_type = request.headers.get("content-type", "").lower()
 
-    # Strategy 1: The request is form data (most likely from Africa's Talking)
+    # Strategy 1: Africa's Talking (form data)
     if "application/x-www-form-urlencoded" in content_type:
         try:
             data = await request.form()
             data_dict = dict(data)
-            logger.info(f"Successfully received form data: {data_dict}")
+            logger.info(f"Received form data: {data_dict}")
 
-            # --- Your Business Logic Here ---
-            # Example: Accessing SMS details
             sms_from = data_dict.get("from")
             sms_text = data_dict.get("text")
             if sms_from and sms_text:
-                logger.info(f"Received SMS from {sms_from} with message: '{sms_text}'")
-            # --- End of Business Logic ---
+                logger.info(f"SMS from {sms_from}: '{sms_text}'")
 
             return JSONResponse({"received": True, "data": data_dict})
 
@@ -58,25 +80,27 @@ async def webhook_handler(request: Request):
                 content={"received": False, "error": "Could not parse form data."},
             )
 
-    # Strategy 2: The request is JSON
+    # Strategy 2: JSON (Resend, Cal.com, HubSpot, etc.)
     elif "application/json" in content_type:
         try:
-            # Check for empty body before trying to parse
             body = await request.body()
             if not body:
-                logger.info("Received empty JSON request (health check).")
-                return JSONResponse(
-                    {"received": True, "message": "Empty JSON body acknowledged."}
-                )
+                logger.info("Empty JSON request (health check).")
+                return JSONResponse({"received": True, "message": "Empty JSON body acknowledged."})
 
             data = json.loads(body)
-            logger.info(f"Successfully received JSON data: {data}")
+            logger.info(f"Received JSON data: {data}")
+
+            # Example: Resend event logging
+            event_type = data.get("type")
+            if event_type:
+                logger.info(f"Resend event type: {event_type}")
+
             return JSONResponse({"received": True, "data": data})
 
         except json.JSONDecodeError:
-            logger.error(
-                f"Received invalid JSON. Body: {body.decode('utf-8', 'ignore')}"
-            )
+            body = await request.body()
+            logger.error(f"Invalid JSON. Body: {body.decode('utf-8', 'ignore')}")
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"received": False, "error": "Invalid JSON in request body."},
@@ -84,14 +108,8 @@ async def webhook_handler(request: Request):
 
     # Fallback Strategy: Handle empty pings or unknown content types
     else:
-        # This handles the Render health checks which may have no content-type and an empty body
-        logger.info(
-            f"Received a request with unhandled or missing Content-Type: {content_type}"
-        )
+        logger.info(f"Unhandled or missing Content-Type: {content_type}")
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={
-                "received": True,
-                "message": "Request with no parsable content acknowledged.",
-            },
+            content={"received": True, "message": "Request acknowledged with no parsable content."},
         )
