@@ -1,0 +1,31 @@
+2026-04-23T11:34:00.783817815Z ==> Deploying...
+2026-04-23T11:34:01.015763821Z ==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+2026-04-23T11:34:34.915092021Z ==> Running 'poetry run uvicorn conversion_engine_backend.main:app --host 0.0.0.0 --port $PORT'
+2026-04-23T11:34:55.301784736Z INFO:     Started server process [55]
+2026-04-23T11:34:55.301828127Z INFO:     Waiting for application startup.
+2026-04-23T11:34:55.302020112Z INFO:     Application startup complete.
+2026-04-23T11:34:55.302253968Z INFO:     Uvicorn running on http://0.0.0.0:10000 (Press CTRL+C to quit)
+2026-04-23T11:34:55.874577826Z INFO:     127.0.0.1:58390 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+2026-04-23T11:35:02.796205129Z ==> Your service is live 🎉
+2026-04-23T11:35:03.016929877Z ==> 
+2026-04-23T11:35:03.019495486Z ==> ///////////////////////////////////////////////////////////
+2026-04-23T11:35:03.02219674Z ==> 
+2026-04-23T11:35:03.024985276Z ==> Available at your primary URL https://the-conversion-engine.onrender.com
+2026-04-23T11:35:03.027478724Z ==> 
+2026-04-23T11:35:03.030894887Z ==> ///////////////////////////////////////////////////////////
+2026-04-23T11:35:03.591561731Z INFO:     34.168.49.152:0 - "GET / HTTP/1.1" 200 OK
+2026-04-23T11:36:01.821785018Z INFO:     Shutting down
+2026-04-23T11:36:01.922500293Z INFO:     Waiting for application shutdown.
+2026-04-23T11:36:01.922654725Z INFO:     Application shutdown complete.
+2026-04-23T11:36:01.922736411Z INFO:     Finished server process [55]
+2026-04-23T11:36:10.940321112Z 2026-04-23 11:36:10,940 - INFO - Successfully received form data: {'linkId': 'fdf1d6f6-24ea-4d32-a078-c643d93a9321', 'text': 'This is a test message to test Hubspot-Render integration.', 'to': '23527', 'id': '234e5c13-8cae-48dd-a359-9ce3339e5b57', 'date': '2026-04-23 11:36:09', 'from': '+251912345678'}
+2026-04-23T11:36:10.940343203Z 2026-04-23 11:36:10,940 - INFO - Processing SMS from +251912345678 with message: 'This is a test message to test Hubspot-Render integration.'
+2026-04-23T11:36:11.457616467Z 2026-04-23 11:36:11,457 - INFO - Email notification sent successfully via Resend to nuhaminae@gmail.com
+2026-04-23T11:36:11.457906465Z INFO:     3.8.44.1:0 - "POST /webhook HTTP/1.1" 200 OK
+2026-04-23T11:36:13.457130307Z 2026-04-23 11:36:13,456 - INFO - Received a request with unhandled or missing Content-Type: application/json
+2026-04-23T11:36:13.457131057Z INFO:     50.112.21.217:0 - "POST /webhook HTTP/1.1" 200 OK
+2026-04-23T11:36:14.30098974Z 2026-04-23 11:36:14,300 - INFO - Received a request with unhandled or missing Content-Type: application/json
+2026-04-23T11:36:14.301137224Z INFO:     54.148.139.208:0 - "POST /webhook HTTP/1.1" 200 OK
+2026-04-23T11:36:52.112630247Z 2026-04-23 11:36:52,112 - INFO - Successfully created HubSpot contact with ID: 763259095241
+2026-04-23T11:36:52.113033698Z INFO:     196.188.35.182:0 - "GET /create-test-contact HTTP/1.1" 200 OK
+
