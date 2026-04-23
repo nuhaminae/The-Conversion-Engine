@@ -1,22 +1,19 @@
 # conversion_engine_backend/main.py
 
 from fastapi import FastAPI, Request
-import datetime
-import json
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "FastAPI is running on Render"}
-
 @app.post("/webhook")
 async def webhook_handler(request: Request):
-    data = await request.json()
+    try:
+        # Try JSON first
+        data = await request.json()
+    except Exception:
+        # Fallback: read raw body or form data
+        form = await request.form()
+        data = dict(form)
+
     print("Received webhook:", data)
-    
-    # Append to log file with timestamp
-    with open("webhook.log", "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now().isoformat()} - {json.dumps(data)}\n")
-    
-    return {"received": True}
+    return JSONResponse({"received": True, "data": data})
