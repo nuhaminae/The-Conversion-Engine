@@ -1,20 +1,20 @@
 # conversion_engine_backend/main.py
+
+# main.py
 import json
 import logging
 from logging.handlers import RotatingFileHandler
-from typing import Any, Dict
 
-from fastapi import Body, FastAPI, Form, Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# --- Configure logging to webhook.log ---
+# --- Configure logging ---
 logger = logging.getLogger("webhook_logger")
 logger.setLevel(logging.INFO)
-
-# Rotating file handler: keeps logs manageable
-handler = RotatingFileHandler("webhook.log", maxBytes=5 * 1024 * 1024, backupCount=3)
+# Using a simple StreamHandler to log to the console, which Render captures.
+handler = logging.StreamHandler()
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
@@ -22,73 +22,76 @@ logger.addHandler(handler)
 
 @app.get("/")
 def read_root():
-    """Handles GET requests to the root URL."""
+    """Handles GET requests to the root URL for health checks."""
     return {"status": "ok", "message": "FastAPI is running on Render"}
 
 
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     """
-    A robust webhook handler that correctly processes different content types.
-    It can handle JSON, URL-encoded form data, and empty 'ping' requests.
+    Handles incoming webhooks, determining the correct parsing strategy
+    based on the Content-Type header.
     """
-    data = None
     content_type = request.headers.get("content-type", "").lower()
 
-    # It's important to check for a body before trying to parse it
-    body = await request.body()
-    if not body:
-        logger.info("Webhook received an empty request body (likely a health check).")
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={"received": True, "message": "Empty body acknowledged."},
-        )
-
-    # 1. Handle JSON data
-    if "application/json" in content_type:
+    # Strategy 1: The request is form data (most likely from Africa's Talking)
+    if "application/x-www-form-urlencoded" in content_type:
         try:
+            data = await request.form()
+            data_dict = dict(data)
+            logger.info(f"Successfully received form data: {data_dict}")
+
+            # --- Your Business Logic Here ---
+            # Example: Accessing SMS details
+            sms_from = data_dict.get("from")
+            sms_text = data_dict.get("text")
+            if sms_from and sms_text:
+                logger.info(f"Received SMS from {sms_from} with message: '{sms_text}'")
+            # --- End of Business Logic ---
+
+            return JSONResponse({"received": True, "data": data_dict})
+
+        except Exception as e:
+            logger.error(f"Error parsing form data: {e}")
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"received": False, "error": "Could not parse form data."},
+            )
+
+    # Strategy 2: The request is JSON
+    elif "application/json" in content_type:
+        try:
+            # Check for empty body before trying to parse
+            body = await request.body()
+            if not body:
+                logger.info("Received empty JSON request (health check).")
+                return JSONResponse(
+                    {"received": True, "message": "Empty JSON body acknowledged."}
+                )
+
             data = json.loads(body)
+            logger.info(f"Successfully received JSON data: {data}")
+            return JSONResponse({"received": True, "data": data})
+
         except json.JSONDecodeError:
             logger.error(
-                f"Webhook received invalid JSON. Body: {body.decode('utf-8', 'ignore')}"
+                f"Received invalid JSON. Body: {body.decode('utf-8', 'ignore')}"
             )
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"received": False, "error": "Invalid JSON in request body."},
             )
 
-    # 2. Handle Form data (like from Africa's Talking)
-    elif "application/x-www-form-urlencoded" in content_type:
-        try:
-            # Use FastAPI's/Starlette's built-in robust form parser
-            form_data = await request.form()
-            data = dict(form_data)
-        except Exception as e:
-            logger.error(
-                f"Failed to parse form data. Body: {body.decode('utf-8', 'ignore')}. Error: {e}"
-            )
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={
-                    "received": False,
-                    "error": "Malformed form data in request body.",
-                },
-            )
-
-    # 3. Handle any other case
+    # Fallback Strategy: Handle empty pings or unknown content types
     else:
-        # Treat as raw text if content-type is unknown or not handled
-        logger.warning(f"Received webhook with unhandled content-type: {content_type}")
-        data = {"raw_body": body.decode("utf-8", "ignore")}
-
-    # Here, data should be a dictionary
-    logger.info(f"Successfully received and parsed webhook: {data}")
-    print("Successfully received and parsed webhook:", data)
-
-    # For example, to get the 'from' and 'text' from an Africa's Talking SMS:
-    if data and "from" in data and "text" in data:
-        sms_sender = data.get("from")
-        sms_text = data.get("text")
-        print(f"Received SMS from {sms_sender} with message: '{sms_text}'")
-
-    return JSONResponse({"received": True, "data": data})
+        # This handles the Render health checks which may have no content-type and an empty body
+        logger.info(
+            f"Received a request with unhandled or missing Content-Type: {content_type}"
+        )
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "received": True,
+                "message": "Request with no parsable content acknowledged.",
+            },
+        )
