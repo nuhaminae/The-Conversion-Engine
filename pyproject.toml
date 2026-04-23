@@ -68,7 +68,7 @@ python = "3.12.3"
 fastapi = "^0.136.0"
 uvicorn = "^0.45.0"
 python-multipart = "^0.0.26"
-resend >= "^2.29.0"
+resend = "^2.29.0"
 
 [build-system]
 requires = ["poetry-core"]
