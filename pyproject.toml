@@ -26,6 +26,7 @@ dependencies = [
     "pydantic>=2.13.3",
     "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.26",
     "requests>=2.33.1",
     "scipy>=1.17.1",
     "seaborn>=0.13.2",
