@@ -1,9 +1,22 @@
 # conversion_engine_backend/main.py
 
+import logging
+from logging.handlers import RotatingFileHandler
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 app = FastAPI()
+
+# --- Configure logging to webhook.log ---
+logger = logging.getLogger("webhook_logger")
+logger.setLevel(logging.INFO)
+
+# Rotating file handler: keeps logs manageable
+handler = RotatingFileHandler("webhook.log", maxBytes=5 * 1024 * 1024, backupCount=3)
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 @app.get("/")
@@ -32,5 +45,8 @@ async def webhook_handler(request: Request):
         body = await request.body()
         data = {"raw": body.decode("utf-8") if body else ""}
 
+    # Log to file and console
+    logger.info(f"Received webhook: {data}")
     print("Received webhook:", data)
+
     return JSONResponse({"received": True, "data": data})
