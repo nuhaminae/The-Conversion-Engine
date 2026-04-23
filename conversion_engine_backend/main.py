@@ -1,14 +1,14 @@
 # conversion_engine_backend/main.py
 
-import logging
 import json
+import logging
 import os
-import resend
-from hubspot import HubSpot
-from hubspot.crm.contacts import SimplePublicObjectInput
 
+import resend
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from hubspot import HubSpot
+from hubspot.crm.contacts import SimplePublicObjectInput
 
 # --- Initialize API Clients ---
 resend.api_key = os.environ.get("RESEND_API_KEY")
@@ -17,7 +17,9 @@ hubspot_client = HubSpot(access_token=os.environ.get("HUBSPOT_ACCESS_TOKEN"))
 # --- Get Email Addresses from Environment ---
 # Correctly reads the email addresses you set in Render's environment
 TO_EMAIL = os.environ.get("RESEND_EMAIL")
-FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "Acme <onboarding@resend.dev>") # Uses a default if not set
+FROM_EMAIL = os.environ.get(
+    "RESEND_FROM_EMAIL", "Acme <onboarding@resend.dev>"
+)  # Uses a default if not set
 
 app = FastAPI()
 
@@ -29,6 +31,7 @@ formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
+
 def send_email_notification(sms_from: str, sms_text: str):
     """
     Uses Resend to send an email notification about a new incoming SMS.
@@ -37,7 +40,9 @@ def send_email_notification(sms_from: str, sms_text: str):
         logger.error("RESEND_API_KEY is not set. Cannot send email.")
         return
     if not TO_EMAIL:
-        logger.error("RESEND_EMAIL environment variable is not set. Cannot send notification.")
+        logger.error(
+            "RESEND_EMAIL environment variable is not set. Cannot send notification."
+        )
         return
 
     subject = f"New SMS Lead from {sms_from}"
@@ -53,8 +58,8 @@ def send_email_notification(sms_from: str, sms_text: str):
 
     try:
         params = {
-            "from": FROM_EMAIL, # <-- Uses the environment variable
-            "to": [TO_EMAIL],   # <-- Uses the email from the environment variable
+            "from": FROM_EMAIL,  # <-- Uses the environment variable
+            "to": [TO_EMAIL],  # <-- Uses the email from the environment variable
             "subject": subject,
             "html": html_body,
         }
@@ -77,7 +82,7 @@ def read_root():
 def create_hubspot_contact():
     """
     Creates a single test contact in HubSpot to verify the API connection.
-    Access this endpoint by going to /create-test-contact in your browser.
+    Access this endpoint by going to <rendered-url>/create-test-contact in your browser.
     """
     if not hubspot_client.access_token:
         logger.error("HUBSPOT_ACCESS_TOKEN is not set. Cannot create contact.")
@@ -99,7 +104,7 @@ def create_hubspot_contact():
         }
         simple_public_object_input = SimplePublicObjectInput(properties=properties)
         api_response = hubspot_client.crm.contacts.basic_api.create(
-            simple_public_object_input=simple_public_object_input
+            simple_public_object_input_for_create=simple_public_object_input  # Argument name is corrected here
         )
 
         logger.info(f"Successfully created HubSpot contact with ID: {api_response.id}")
