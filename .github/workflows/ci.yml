@@ -36,8 +36,8 @@ jobs:
         if: steps.venv-cache.outputs.cache-hit != 'true'
         run: uv sync
 
-      - name: Confirm Python version
-        run: .venv\Scripts\python.exe --version
+      - name: Check Python version
+        run: uv run python --version
 
       - name: Style and Lint Validation (Black, isort, Flake8)
         run: |
