@@ -29,7 +29,7 @@ logger.addHandler(file_handler)
 # --- Configure Resend ---
 # IMPORTANT: replace with environment variable in production
 resend.api_key = os.environ.get("RESEND_API_KEY") 
-resend_email = os.environ.get("RESEND_EMAIL")
+RESEND_EMAIL = os.environ.get("RESEND_EMAIL")
 
 @app.get("/")
 def read_root():
@@ -42,7 +42,7 @@ def send_test_email():
     """Send a test email via Resend to verify outbound email works."""
     params = {
         "from": "onboarding@resend.dev",   # Resend sandbox sender
-        "to": resend_email,    # Replace with your email
+        "to": RESEND_EMAIL,    # Replace with your email
         "subject": "Test Email from FastAPI",
         "html": "<p>Hello from Resend + FastAPI!</p>",
     }
