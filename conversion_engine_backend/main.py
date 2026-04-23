@@ -11,8 +11,9 @@ from fastapi.responses import JSONResponse
 from hubspot import HubSpot
 from hubspot.crm.contacts import SimplePublicObjectInput
 
-# --- Observability: Langfuse ---
+# --- Observability: Langfuse + OpenTelemetry ---
 from langfuse import Langfuse
+from opentelemetry import trace
 
 # --- Load environment variables ---
 load_dotenv()
@@ -21,12 +22,15 @@ load_dotenv()
 resend.api_key = os.environ.get("RESEND_API_KEY")
 hubspot_client = HubSpot(access_token=os.environ.get("HUBSPOT_ACCESS_TOKEN"))
 
-# --- Initialise Langfuse ---
+# --- Initialise Langfuse (OpenTelemetry exporter) ---
 langfuse = Langfuse(
     public_key=os.environ.get("LANGFUSE_PUBLIC_KEY"),
     secret_key=os.environ.get("LANGFUSE_SECRET_KEY"),
     host="https://cloud.langfuse.com",  # default cloud host
 )
+
+# Get tracer from OpenTelemetry
+tracer = trace.get_tracer("conversion-engine")
 
 # --- Get Email Addresses from Environment ---
 TO_EMAIL = os.environ.get("RESEND_EMAIL")
@@ -48,6 +52,7 @@ logger.addHandler(stream_handler)
 def send_email_notification(sms_from: str, sms_text: str):
     """
     Uses Resend to send an email notification about a new incoming SMS.
+    Also logs the action to Langfuse via OpenTelemetry.
     """
     if not resend.api_key:
         logger.error("RESEND_API_KEY is not set. Cannot send email.")
@@ -79,10 +84,13 @@ def send_email_notification(sms_from: str, sms_text: str):
         email = resend.Emails.send(params)
         logger.info(f"Email notification sent successfully via Resend to {TO_EMAIL}")
 
-        # --- Langfuse trace for email notification ---
-        trace = langfuse.trace(name="email_notification", input=params)
-        trace.log(f"Sent email notification to {TO_EMAIL}", level="info")
-        trace.end()
+        # --- Langfuse span for email notification ---
+        with tracer.start_as_current_span("email_notification") as span:
+            span.set_attribute("to_email", TO_EMAIL)
+            span.set_attribute("from_email", FROM_EMAIL)
+            span.set_attribute("sms_from", sms_from)
+            span.set_attribute("sms_text", sms_text)
+            span.add_event("Email sent", {"status": "success"})
 
     except Exception as e:
         logger.error(f"Failed to send email notification: {e}")
@@ -100,7 +108,7 @@ def read_root():
 def create_hubspot_contact():
     """
     Creates a single test contact in HubSpot to verify the API connection.
-    Access this endpoint by going to <rendered-url>/create-test-contact in your browser.
+    Also logs the action to Langfuse via OpenTelemetry.
     """
     if not hubspot_client.access_token:
         logger.error("HUBSPOT_ACCESS_TOKEN is not set. Cannot create contact.")
@@ -127,10 +135,11 @@ def create_hubspot_contact():
 
         logger.info(f"Successfully created HubSpot contact with ID: {api_response.id}")
 
-        # --- Langfuse trace for HubSpot contact creation ---
-        trace = langfuse.trace(name="hubspot_contact_creation", input=properties)
-        trace.log(f"Created HubSpot contact ID: {api_response.id}", level="info")
-        trace.end()
+        # --- Langfuse span for HubSpot contact creation ---
+        with tracer.start_as_current_span("hubspot_contact_creation") as span:
+            span.set_attribute("contact_id", api_response.id)
+            span.set_attribute("properties", str(properties))
+            span.add_event("Contact created", {"status": "success"})
 
         return JSONResponse(
             content={"status": "success", "contact_id": api_response.id}
@@ -147,7 +156,7 @@ def create_hubspot_contact():
 async def webhook_handler(request: Request):
     """
     Handles incoming webhooks from Africa's Talking, creates a HubSpot contact,
-    sends an email notification, and logs everything to Langfuse.
+    sends an email notification, and logs everything to Langfuse via OpenTelemetry.
     """
     content_type = request.headers.get("content-type", "").lower()
 
@@ -166,10 +175,11 @@ async def webhook_handler(request: Request):
                 )
                 send_email_notification(sms_from=sms_from, sms_text=sms_text)
 
-                # --- Langfuse trace for SMS webhook ---
-                trace = langfuse.trace(name="sms_webhook", input=data)
-                trace.log(f"Received SMS from {sms_from}", level="info")
-                trace.end()
+                # --- Langfuse span for SMS webhook ---
+                with tracer.start_as_current_span("sms_webhook") as span:
+                    span.set_attribute("sms_from", sms_from)
+                    span.set_attribute("sms_text", sms_text)
+                    span.add_event("SMS received", {"status": "processed"})
 
             return JSONResponse({"received": True, "data": data})
 
@@ -192,10 +202,10 @@ async def webhook_handler(request: Request):
             data = json.loads(body)
             logger.info(f"Received JSON data: {data}")
 
-            # --- Langfuse trace for JSON webhook ---
-            trace = langfuse.trace(name="json_webhook", input=data)
-            trace.log("Received JSON webhook event", level="info")
-            trace.end()
+            # --- Langfuse span for JSON webhook ---
+            with tracer.start_as_current_span("json_webhook") as span:
+                span.set_attribute("payload", str(data))
+                span.add_event("JSON webhook received", {"status": "ok"})
 
             return JSONResponse({"received": True, "data": data})
 
@@ -212,12 +222,10 @@ async def webhook_handler(request: Request):
             f"Received a request with unhandled or missing Content-Type: {content_type}"
         )
 
-        # --- Langfuse trace for fallback webhook ---
-        trace = langfuse.trace(
-            name="fallback_webhook", input={"content_type": content_type}
-        )
-        trace.log("Unhandled webhook content type", level="warning")
-        trace.end()
+        # --- Langfuse span for fallback webhook ---
+        with tracer.start_as_current_span("fallback_webhook") as span:
+            span.set_attribute("content_type", content_type)
+            span.add_event("Unhandled webhook content type", {"status": "acknowledged"})
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
