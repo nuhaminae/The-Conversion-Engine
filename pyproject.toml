@@ -4,7 +4,7 @@
 name = "conversion_engine_backend"
 version = "0.1.0"
 description = "An Automated Lead Generation and Conversion System for Tenacious Consulting and Outsourcing." 
-requires-python = ">=3.12"
+requires-python = "==3.12.3"
 dependencies = [
     "africastalking>=2.0.2",
     "aiohttp>=3.13.5",
@@ -62,7 +62,7 @@ description = "Webhook backend for Conversion Engine"
 authors = ["Nuhamin"]
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "3.12.3"
 fastapi = "^0.136.0"
 uvicorn = "^0.45.0"
 
