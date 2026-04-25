@@ -1,0 +1,30 @@
+(The-Conversion-Engine) PS C:\Users\nuhamin\Documents\Tenacious\week10\The-Conversion-Engine> poetry run uvicorn conversion_engine_backend.main:app 
+INFO:     Started server process [19068]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:14430 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:14430 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:6087 - "GET / HTTP/1.1" 200 OK
+2026-04-25 22:51:57,259 - INFO - Starting outreach pipeline for Nuhamin Alemayehu at Notion
+Searching for HubSpot contact with email: nuhaminae@gmail.com
+Contact found with ID: 765363430597
+Updating HubSpot contact ID: 765363430597 with properties: {'hs_lead_status': 'OPEN'}
+Contact updated successfully.
+Starting enrichment for 'Notion'...
+Warning: Crunchbase file not found. Proceeding without Crunchbase data.
+Navigating to https://www.notion.so/careers...
+Found 162 potential job elements.
+Data gathering complete. Analyzing and building brief...
+Sending email via Resend to: nuhaminae@gmail.com with subject: 'a thought on Notion's roadmap'
+Email sent successfully.
+Updating HubSpot contact ID: 765363430597 with properties: {'last_outreach_note': 'Initial outreach sent.'}
+Contact updated successfully.
+INFO:     127.0.0.1:2575 - "POST /start-outreach HTTP/1.1" 200 OK
+2026-04-25 22:54:01,990 - INFO - Received reply from nuhaminae@gmail.com
+2026-04-25 22:54:06,582 - INFO - Classified intent for nuhaminae@gmail.com as: INTERESTED_BOOK_MEETING
+Searching for HubSpot contact with email: nuhaminae@gmail.com
+Contact found with ID: 765363430597
+Fetching property 'company' for HubSpot contact ID: 765363430597
+Updating HubSpot contact ID: 765363430597 with properties: {'hs_lead_status': 'IN_PROGRESS'}
+Contact updated successfully.
