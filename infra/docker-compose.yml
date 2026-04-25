@@ -1,0 +1,54 @@
+# infra/docker-compose.yml
+#
+# This file sets up a local Cal.com instance for development and testing.
+# It includes the Cal.com application and a persistent PostgreSQL database.
+#
+# To run:
+# 1. Make sure Docker is running on your machine.
+# 2. Navigate to the `infra/` directory.
+# 3. Run the command: `docker-compose up -d`
+# 4. Access the Cal.com instance at http://localhost:3000 in your browser.
+
+services:
+  # PostgreSQL Database for Cal.com
+  cal-db:
+    image: postgres:13-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=cal
+      - POSTGRES_PASSWORD=cal
+      - POSTGRES_DB=cal
+    volumes:
+      - cal_db_data:/var/lib/postgresql/data
+    networks:
+      - cal-network
+
+  # Cal.com Web Application
+  cal-app:
+    image: calcom/cal.com:latest
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      # This MUST match the database credentials above
+      - DATABASE_URL=postgresql://cal:cal@cal-db:5432/cal
+      - DATABASE_DIRECT_URL=postgresql://cal:cal@cal-db:5432/cal
+      # Generate your own secret by running: openssl rand -base64 32
+      # Or use a simple string for local dev, but change it for any real deployment.
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - CALENDSO_ENCRYPTION_KEY=${CALENDSO_ENCRYPTION_KEY}
+      # This tells Cal.com its own public-facing URL
+      - NEXT_PUBLIC_WEBAPP_URL=http://localhost:3000
+    networks:
+      - cal-network
+    depends_on:
+      - cal-db
+
+# Networks and Volumes definitions
+networks:
+  cal-network:
+    driver: bridge
+
+volumes:
+  cal_db_data:
+    driver: local
