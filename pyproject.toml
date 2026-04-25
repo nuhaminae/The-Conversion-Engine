@@ -22,6 +22,7 @@ dependencies = [
     "networkx>=3.6.1",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
+    "playwright>=1.58.0",
     "poetry>=2.3.4",
     "pre-commit>=4.6.0",
     "pydantic>=2.13.3",
