@@ -1,0 +1,66 @@
+{
+  "graph_version": "1.0",
+  "evaluation_run_id": "[Enter the 'run_id' from your score_log.json]",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "claim_text": "Agent successfully generates a personalised, assertive outreach email when strong hiring signals are present.",
+      "category": "Performance",
+      "supporting_evidence": [
+        {
+          "simulation_id": "[Find a task_id/simulation_id from trace_log.jsonl where the agent had high hiring velocity and succeeded]",
+          "type": "trace_log",
+          "rationale": "This trace shows the agent detecting >20 job posts and using assertive phrasing in its initial email, leading to a positive reply."
+        }
+      ]
+    },
+    {
+      "claim_id": "C02",
+      "claim_text": "Agent successfully adapts to low signal by using inquisitive, lower-confidence phrasing.",
+      "category": "Performance",
+      "supporting_evidence": [
+        {
+          "simulation_id": "[Find a task_id/simulation_id where the job scrape failed or returned 0 results]",
+          "type": "trace_log",
+          "rationale": "This trace shows a job scrape failure. The agent correctly switched to an inquisitive prompt ('Curious how you're thinking about...'), which still resulted in a successful qualification."
+        }
+      ]
+    },
+    {
+      "claim_id": "C03",
+      "claim_text": "Agent correctly identifies and handles user questions before pushing for a meeting.",
+      "category": "Conversation Dynamics",
+      "supporting_evidence": [
+        {
+          "simulation_id": "[Find a simulation_id where the user replied with a question]",
+          "type": "trace_log",
+          "rationale": "In this trace, the user asks about cost. The agent classifies the intent as INTERESTED_QUESTION, provides a brief answer, and then pivots back to the booking link."
+        }
+      ]
+    },
+    {
+      "claim_id": "C04",
+      "claim_text": "Agent successfully disengages when a prospect is not interested.",
+      "category": "Guardrails",
+      "supporting_evidence": [
+        {
+          "simulation_id": "[Find a simulation_id where the user replied with 'not interested']",
+          "type": "trace_log",
+          "rationale": "The user replied 'No thanks'. The agent classified the intent as NOT_INTERESTED and sent a polite sign-off email, ending the interaction correctly."
+        }
+      ]
+    },
+    {
+      "claim_id": "F01",
+      "claim_text": "Agent failed to correctly interpret a rude reply, and responded too enthusiastically.",
+      "category": "Failure Mode",
+      "supporting_evidence": [
+        {
+          "simulation_id": "[Find a simulation_id where the agent failed a social cue]",
+          "type": "trace_log",
+          "rationale": "This trace from an early run shows the agent misclassifying a sarcastic reply as INTERESTED. This was a motivating case for prompt refinement."
+        }
+      ]
+    }
+  ]
+}
