@@ -83,7 +83,6 @@ graph TD
 - **HubSpot MCP Integration:** The system uses a **Model Context Protocol (MCP)** server to allow the agent to read and write directly to HubSpot, ensuring all interactions, transcripts, and firmographic data are structured as a record of truth.
 - **Observability & Validation:** **Langfuse** captures every trace, tool call, and token cost. This data feeds into an **Evidence-Graph**, which maps every claim (e.g., "cost per qualified lead") back to a specific trace file for auditability.
 
-
 ---
 
 - [The-Conversion-Engine](#the-conversion-engine)
@@ -106,14 +105,56 @@ graph TD
 
 ```bash
 The-Conversion-Engine/ 
-├── conversion_engine.py/ 
+├── .env                      # Stores all API keys and secrets 
+├── .gitignore
+│
+├── conversion_engine_backend/ 
 │   ├── __init__.py                       
-│   └── main.py                 # FastAPI integration 
-├── evaluation                       
-│   ├── baseline.md
-│   ├── score_log.json
-│   └── trace_log.jsnol
-└── DOMAIN_NOTES.md 
+│   └── main.py               # FastAPI application for handling webhooks (email, SMS) 
+│
+├── enrichment/               # Signal enrichment pipeline scripts
+│   ├── __init__.py
+│   ├── crunchbase.py         # Fetches data from the Crunchbase ODM sample
+│   ├── jobs.py               # Scrapes job posts via Playwright
+│   ├── layoffs.py            # Parses layoff data from layoffs.fyi
+│   └── core.py               # Orchestrates the enrichment and generates briefs
+│
+├── llm/                # Logic for Large Language Model interactions
+│   ├── __init__.py
+│   ├── prompts.py      # Prompt templates based on the style_guide.md
+│   └── core.py         # Core logic for generating email/SMS content
+│
+└── services/           # Logic for interacting with external services
+│   ├── __init__.py
+│   ├── hubspot_service.py # Handles creating and updating HubSpot contacts
+│   ├── cal_service.py    # Handles booking meetings with Cal.com
+│   └── email_service.py  # Logic for sending emails via Resend
+│
+├── data/                   # Directory for local data sources
+│   ├── crunchbase_odm.csv  # The downloaded Crunchbase dataset
+│   └── layoffs.csv         # The downloaded layoffs.fyi dataset
+│
+├── eval/                   # Evaluation harness, logs, and reports
+│   ├── tau2-bench/         # The cloned tau2-bench repository (not pushed)
+│   ├── harness.py          # Your wrapper script for running benchmarks
+│   ├── score_log.json      # Benchmark results 
+│   ├── trace_log.jsonl     # Raw simulation traces (you already have a sample)
+│   └── baseline.md         # Your analysis of the baseline run
+│
+├── infra/                  # Infrastructure configuration
+│   ├── docker-compose.yml  # For running Cal.com locally
+│   ├── smoke_test.sh       # The Day 0 readiness script
+│   └── cal_fixtures/       # Mock calendar data for testing
+│
+├── probes/                 # Files for Act III (Adversarial Probing)
+│   ├── probe_library.md
+│   └── failure_taxonomy.md
+│
+├── reports/                # Final deliverables for submission
+│   ├── memo.pdf            # The final 2-page decision memo for Tenacious
+│   └── evidence_graph.json # Machine-readable mapping of claims to traces
+│
+└──  README.md             # Project overview, architecture diagram, and setup instructions
 ```
 
 ---
@@ -209,20 +250,6 @@ If sucessful you will see, example:
 ```
 
 3. Clone and setup `Cal.com`
-
-```bash
-# Verify docker is installed
-docker --version
-docker compose version
-
-# Clone cal.com
-git clone https://github.com/calcom/cal.com.git
-cd cal.com
-
-# Execute the cloned file
-docker compose up
-
-```
 
 ---
 
