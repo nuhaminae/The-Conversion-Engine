@@ -1,236 +1,211 @@
 # conversion_engine_backend/main.py
 
 import json
+
+# Setup & Configuration ---
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+from typing import Optional
+
+from pydantic import BaseModel
+
+
+class FromEmail(BaseModel):
+    email: str
+
+
+class ResendData(BaseModel):
+    from_: FromEmail  # use `from_` because `from` is a reserved word
+    text: Optional[str]
+    html: Optional[str]
+
+
+class ResendWebhookPayload(BaseModel):
+    type: str
+    data: ResendData
+
+
 import logging
 import os
 
-import resend
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
-from hubspot import HubSpot
-from hubspot.crm.contacts import SimplePublicObjectInput
+from fastapi import FastAPI, HTTPException, Request
 
-# --- Observability: Langfuse + OpenTelemetry ---
-from langfuse import Langfuse
-from opentelemetry import trace
+# --- Langfuse Integration ---
+from langfuse import get_client, observe
+from pydantic import BaseModel
 
-# --- Load environment variables ---
-load_dotenv()
+import llm.core as llm_core
+import llm.prompts as prompts
 
-# --- Initialise API Clients ---
-resend.api_key = os.environ.get("RESEND_API_KEY")
-hubspot_client = HubSpot(access_token=os.environ.get("HUBSPOT_ACCESS_TOKEN"))
+# --- Custom Modules ---
+from enrichment import core as enrichment_core
+from services import cal_service, email_service, hubspot_service
 
-# --- Initialise Langfuse (OpenTelemetry exporter) ---
-langfuse = Langfuse(
-    public_key=os.environ.get("LANGFUSE_PUBLIC_KEY"),
-    secret_key=os.environ.get("LANGFUSE_SECRET_KEY"),
-    host="https://cloud.langfuse.com",  # default cloud host
+# --- Logging & Langfuse ---
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+langfuse_client = get_client()
+
+
+# --- Pydantic Model ---
+class OutreachPayload(BaseModel):
+    email: str
+    name: str
+    company: str
+    jobs_page_url: str
+
+
+app = FastAPI(
+    title="The Conversion Engine",
+    description="Automated lead generation and conversion system for Tenacious Consulting.",
 )
 
-# Get tracer from OpenTelemetry
-tracer = trace.get_tracer("conversion-engine")
 
-# --- Get Email Addresses from Environment ---
-TO_EMAIL = os.environ.get("RESEND_EMAIL")
-FROM_EMAIL = os.environ.get(
-    "RESEND_FROM_EMAIL", "Acme <onboarding@resend.dev>"
-)  # Uses a default if not set
-
-app = FastAPI()
-
-# --- Configure Logging ---
-logger = logging.getLogger("webhook_logger")
-logger.setLevel(logging.INFO)
-stream_handler = logging.StreamHandler()
-formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-stream_handler.setFormatter(formatter)
-logger.addHandler(stream_handler)
-
-
-def send_email_notification(sms_from: str, sms_text: str):
-    """
-    Uses Resend to send an email notification about a new incoming SMS.
-    Also logs the action to Langfuse via OpenTelemetry.
-    """
-    if not resend.api_key:
-        logger.error("RESEND_API_KEY is not set. Cannot send email.")
-        return
-    if not TO_EMAIL:
-        logger.error(
-            "RESEND_EMAIL environment variable is not set. Cannot send notification."
-        )
-        return
-
-    subject = f"New SMS Lead from {sms_from}"
-    html_body = f"""
-        <h3>New Lead via SMS!</h3>
-        <p>You've received a new message through the Conversion Engine:</p>
-        <ul>
-            <li><strong>From:</strong> {sms_from}</li>
-            <li><strong>Message:</strong> {sms_text}</li>
-        </ul>
-        <p>Please follow up promptly.</p>
-    """
-
-    try:
-        params = {
-            "from": FROM_EMAIL,
-            "to": [TO_EMAIL],
-            "subject": subject,
-            "html": html_body,
-        }
-        email = resend.Emails.send(params)
-        logger.info(f"Email notification sent successfully via Resend to {TO_EMAIL}")
-
-        # --- Langfuse span for email notification ---
-        with tracer.start_as_current_span("email_notification") as span:
-            span.set_attribute("to_email", TO_EMAIL)
-            span.set_attribute("from_email", FROM_EMAIL)
-            span.set_attribute("sms_from", sms_from)
-            span.set_attribute("sms_text", sms_text)
-            span.add_event("Email sent", {"status": "success"})
-
-    except Exception as e:
-        logger.error(f"Failed to send email notification: {e}")
-
-
-@app.get("/")
+# --- Health Check ---
+@app.get("/", tags=["Health Check"])
+@observe()
 def read_root():
-    """
-    A simple endpoint to confirm the server is running.
-    """
-    return {"status": "ok", "message": "FastAPI is running on Render"}
+    return {"status": "ok", "message": "Conversion Engine is running."}
 
 
-@app.get("/create-test-contact")
-def create_hubspot_contact():
-    """
-    Creates a single test contact in HubSpot to verify the API connection.
-    Also logs the action to Langfuse via OpenTelemetry.
-    """
-    if not hubspot_client.access_token:
-        logger.error("HUBSPOT_ACCESS_TOKEN is not set. Cannot create contact.")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "message": "HubSpot API key is not configured.",
-            },
+# --- Outreach Pipeline ---
+@app.post("/start-outreach", tags=["Core Pipeline"])
+@observe()
+async def start_outreach_pipeline(payload: OutreachPayload):
+    prospect_email = payload.email
+    prospect_name = payload.name
+    company_name = payload.company
+    jobs_page_url = payload.jobs_page_url
+
+    langfuse_client.update_current_span(
+        name="full-outreach-pipeline", metadata={"company": company_name}
+    )
+
+    logging.info(f"Starting outreach pipeline for {prospect_name} at {company_name}")
+
+    # 1. CRM update
+    contact_id = hubspot_service.find_contact_by_email(prospect_email)
+    if not contact_id:
+        first_name = prospect_name.split(" ")[0]
+        last_name = (
+            " ".join(prospect_name.split(" ")[1:]) if " " in prospect_name else ""
+        )
+        contact_id = hubspot_service.create_contact(
+            prospect_email, first_name, last_name, company_name
         )
 
-    try:
-        properties = {
-            "email": "test.contact@example.com",
-            "firstname": "Test",
-            "lastname": "Contact",
-            "phone": "+1234567890",
-            "lifecyclestage": "lead",
-        }
-        simple_public_object_input = SimplePublicObjectInput(properties=properties)
-        api_response = hubspot_client.crm.contacts.basic_api.create(
-            simple_public_object_input_for_create=simple_public_object_input
+    if not contact_id:
+        logging.error("Failed to find or create HubSpot contact. Aborting outreach.")
+        raise HTTPException(status_code=500, detail="Failed to create HubSpot contact.")
+
+    hubspot_service.update_contact_property(contact_id, {"hs_lead_status": "OPEN"})
+
+    # 2. Enrichment
+    hiring_brief = await enrichment_core.enrich_prospect(company_name, jobs_page_url)
+
+    # 3. LLM Draft
+    prompt = prompts.INITIAL_OUTREACH_PROMPT.format(
+        prospect_name=prospect_name,
+        prospect_company=company_name,
+        hiring_signal_brief=hiring_brief,
+    )
+    email_content = await llm_core.generate_llm_response(prompt, prompts.SYSTEM_PERSONA)
+
+    if "error" in email_content or not all(
+        [email_content.get("subject"), email_content.get("body")]
+    ):
+        logging.error(
+            f"Failed to generate email content for {prospect_email}. Error: {email_content.get('error')}"
+        )
+        raise HTTPException(
+            status_code=500, detail="LLM failed to generate email content."
         )
 
-        logger.info(f"Successfully created HubSpot contact with ID: {api_response.id}")
+    # 4. Send Email
+    email_service.send_email(
+        to_email=prospect_email,
+        subject=email_content["subject"],
+        body=email_content["body"],
+    )
 
-        # --- Langfuse span for HubSpot contact creation ---
-        with tracer.start_as_current_span("hubspot_contact_creation") as span:
-            span.set_attribute("contact_id", api_response.id)
-            span.set_attribute("properties", str(properties))
-            span.add_event("Contact created", {"status": "success"})
+    # 5. CRM note (use a safe custom property instead of read-only)
+    hubspot_service.update_contact_property(
+        contact_id, {"last_outreach_note": "Initial outreach sent."}
+    )
 
-        return JSONResponse(
-            content={"status": "success", "contact_id": api_response.id}
+    return {
+        "status": "success",
+        "message": f"Outreach process started for {prospect_email}.",
+    }
+
+
+# --- Resend Webhook ---
+@app.post("/webhook/resend", tags=["Webhook Handlers"])
+@observe()
+async def handle_resend_webhook(payload: ResendWebhookPayload):
+    # Only process email.created events
+    if payload.type != "email.created":
+        return {"status": "ignored", "reason": f"Event type is {payload.type}"}
+
+    prospect_email = payload.data.from_.email
+    prospect_reply_body = payload.data.text
+    our_last_email_body = payload.data.html
+
+    if not prospect_email or not prospect_reply_body:
+        return {"status": "error", "reason": "Missing sender or body from webhook payload."}
+
+    logging.info(f"Received reply from {prospect_email}")
+    langfuse_client.update_current_span(name="handle-email-reply")
+
+    # 1. Classify Intent
+    classification_prompt = prompts.REPLY_CLASSIFICATION_PROMPT.format(
+        our_last_email_body=our_last_email_body,
+        prospect_reply_body=prospect_reply_body
+    )
+    classification_result = await llm_core.generate_llm_response(
+        classification_prompt, prompts.SYSTEM_PERSONA
+    )
+    intent = classification_result.get("intent", "UNSURE")
+    logging.info(f"Classified intent for {prospect_email} as: {intent}")
+
+    # 2. Take Action
+    contact_id = hubspot_service.find_contact_by_email(prospect_email)
+    if not contact_id:
+        logging.warning(f"Reply from {prospect_email}, not a known contact.")
+        return {"status": "error", "reason": "Contact not found in HubSpot."}
+
+    # Retrieve company name from HubSpot for use in drafting prompt
+    prospect_company = hubspot_service.get_contact_property(contact_id, "company") or "your company"
+
+
+    if intent in ["INTERESTED_BOOK_MEETING", "INTERESTED_QUESTION"]:
+        hubspot_service.update_contact_property(contact_id, {"hs_lead_status": "IN_PROGRESS"})
+        booking_link = cal_service.get_booking_link("nuhamin")
+        reply_prompt = prompts.REPLY_DRAFTING_PROMPT.format(
+            intent=intent,
+            our_last_email_body=our_last_email_body,
+            prospect_reply_body=prospect_reply_body,
+            cal_link=booking_link,
+            prospect_company=prospect_company
+        )
+        reply_content = await llm_core.generate_llm_response(
+            reply_prompt, prompts.SYSTEM_PERSONA
+        )
+        email_service.send_email(
+            prospect_email, reply_content["subject"], reply_content["body"]
         )
 
-    except Exception as e:
-        logger.error(f"Failed to create HubSpot contact: {e}")
-        return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
-        )
+    elif intent == "NOT_INTERESTED":
+        hubspot_service.update_contact_property(contact_id, {"hs_lead_status": "UNQUALIFIED"})
 
-
-@app.post("/webhook")
-async def webhook_handler(request: Request):
-    """
-    Handles incoming webhooks from Africa's Talking, creates a HubSpot contact,
-    sends an email notification, and logs everything to Langfuse via OpenTelemetry.
-    """
-    content_type = request.headers.get("content-type", "").lower()
-
-    if "application/x-www-form-urlencoded" in content_type:
-        try:
-            form_data = await request.form()
-            data = dict(form_data)
-            logger.info(f"Successfully received form data: {data}")
-
-            sms_from = data.get("from")
-            sms_text = data.get("text")
-
-            if sms_from and sms_text:
-                logger.info(
-                    f"Processing SMS from {sms_from} with message: '{sms_text}'"
-                )
-                send_email_notification(sms_from=sms_from, sms_text=sms_text)
-
-                # --- Langfuse span for SMS webhook ---
-                with tracer.start_as_current_span("sms_webhook") as span:
-                    span.set_attribute("sms_from", sms_from)
-                    span.set_attribute("sms_text", sms_text)
-                    span.add_event("SMS received", {"status": "processed"})
-
-            return JSONResponse({"received": True, "data": data})
-
-        except Exception as e:
-            logger.error(f"Error parsing form data: {e}")
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={"received": False, "error": "Could not parse form data."},
-            )
-
-    elif "application/json" in content_type:
-        try:
-            body = await request.body()
-            if not body:
-                logger.info("Empty JSON request (health check).")
-                return JSONResponse(
-                    {"received": True, "message": "Empty JSON body acknowledged."}
-                )
-
-            data = json.loads(body)
-            logger.info(f"Received JSON data: {data}")
-
-            # --- Langfuse span for JSON webhook ---
-            with tracer.start_as_current_span("json_webhook") as span:
-                span.set_attribute("payload", str(data))
-                span.add_event("JSON webhook received", {"status": "ok"})
-
-            return JSONResponse({"received": True, "data": data})
-
-        except json.JSONDecodeError:
-            body = await request.body()
-            logger.error(f"Invalid JSON. Body: {body.decode('utf-8', 'ignore')}")
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={"received": False, "error": "Invalid JSON in request body."},
-            )
-
-    else:
-        logger.info(
-            f"Received a request with unhandled or missing Content-Type: {content_type}"
-        )
-
-        # --- Langfuse span for fallback webhook ---
-        with tracer.start_as_current_span("fallback_webhook") as span:
-            span.set_attribute("content_type", content_type)
-            span.add_event("Unhandled webhook content type", {"status": "acknowledged"})
-
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "received": True,
-                "message": "Request acknowledged but not processed as form data.",
-            },
-        )
+    return {"status": "processed", "intent": intent}
