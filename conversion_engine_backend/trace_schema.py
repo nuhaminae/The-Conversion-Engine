@@ -1,4 +1,7 @@
 # conversion_engine_backend/trace_schema.py
+# added after peer's explainer 
+# passed acceptance check : python -m compileall conversion_engine_backend/trace_schema.py
+
 
 from __future__ import annotations
 
