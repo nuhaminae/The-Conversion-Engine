@@ -70,8 +70,20 @@ Classify the prospect's primary intent into one of the following categories:
 {prospect_reply_body}
 ---
 
-Return only a single JSON object with a single key "intent" and the category as the value.
-Example: {{"intent": "INTERESTED_QUESTION"}}
+Return only a single JSON object with these keys:
+- "intent": one of the categories above
+- "confidence": a number from 0.0 to 1.0 representing how confident you are
+- "alternatives": a list of up to two other plausible intents with scores
+
+Example:
+{{
+  "intent": "INTERESTED_QUESTION",
+  "confidence": 0.78,
+  "alternatives": [
+    {{"intent": "INTERESTED_BOOK_MEETING", "score": 0.16}},
+    {{"intent": "UNSURE", "score": 0.06}}
+  ]
+}}
 """
 
 
